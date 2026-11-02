@@ -1,0 +1,27 @@
+docker-compose up --build
+
+http://localhost:5173
+
+
+docker exec -it backend-postgres-1 psql -U medsecretariat -d medsecretariat -c "\dt"
+
+
+http://localhost:8080/health
+
+http://localhost:8080/api/v1/auth/register
+
+{
+  "email": "test@example.com",
+  "password": "Password123!",
+  "first_name": "Test",
+  "last_name": "User",
+  "phone": "+21620000000",
+  "role": "doctor"
+}
+
+
+http://localhost:8080/api/v1/auth/login
+{
+  "email": "test@example.com",
+  "password": "Password123!"
+}

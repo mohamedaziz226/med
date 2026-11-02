@@ -1,0 +1,14 @@
+const Database = require('better-sqlite3');
+const db = new Database('/home/node/.n8n/database.sqlite', { readonly: true });
+const wfs = db.prepare('SELECT id, name, active FROM workflow_entity').all();
+console.log('WORKFLOWS:');
+for (const w of wfs) console.log(`  ${w.id} | active=${w.active} | ${w.name}`);
+const creds = db.prepare('SELECT id, name, type FROM credentials_entity').all();
+console.log('CREDENTIALS:');
+for (const c of creds) console.log(`  ${c.id} | ${c.name} | ${c.type}`);
+const execs = db.prepare('SELECT id, workflowId, status, startedAt, finishedAt FROM execution_entity ORDER BY startedAt DESC LIMIT 10').all();
+console.log('RECENT EXECUTIONS:');
+for (const e of execs) console.log(`  ${e.id} | wf=${e.workflowId} | ${e.status} | ${e.startedAt}`);
+const ts = db.prepare('SELECT id, name, active, settings FROM workflow_entity WHERE name LIKE ?').all('%Rappels de dettes%');
+for (const t of ts) console.log('SETTINGS:', t.id, JSON.stringify(t.settings));
+db.close();

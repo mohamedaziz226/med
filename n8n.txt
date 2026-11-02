@@ -1,0 +1,35 @@
+scription
+
+Description
+Intégrer n8n afin d'automatiser les processus métier déclenchés par les événements du backend.
+
+Le backend communiquera avec n8n via des webhooks sécurisés.
+
+Automatisations prévues :
+
+Envoi de l'e-mail de confirmation de rendez-vous.
+
+Envoi des rappels de rendez-vous à J-7 et J-1.
+
+Synchronisation avec Google Agenda (Google Calendar).
+
+Envoi de la facture par e-mail.
+
+Envoi de la confirmation de paiement.
+
+Intégrations futures : SMS, WhatsApp, etc.
+
+Critères d'acceptation
+Le backend est connecté à n8n.
+
+Les webhooks sécurisés sont implémentés.
+
+Le service n8n est ajouté à l'environnement Docker.
+
+Les variables d'environnement sont correctement configurées.
+
+Des exemples de workflows n8n sont disponibles.
+
+Les fonctionnalités existantes du backend restent pleinement opérationnelles.
+
+L'ensemble des tests est exécuté avec succès.
