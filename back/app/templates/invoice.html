@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Facture {{ invoice_number }}</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; color: #333; }
+    h1 { color: #2563eb; }
+    table { width: 100%; border-collapse: collapse; margin-top: 24px; }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+    th { background: #f3f4f6; }
+    .total { font-weight: bold; font-size: 1.2em; }
+  </style>
+</head>
+<body>
+  <h1>Facture {{ invoice_number }}</h1>
+  <p><strong>Patient :</strong> {{ patient_name }}</p>
+  <p><strong>Date d'émission :</strong> {{ generated_at }}</p>
+  <table>
+    <tr><th>Description</th><th>Montant</th></tr>
+    <tr><td>{{ description }}</td><td>{{ amount }} €</td></tr>
+    <tr><td>Montant payé</td><td>{{ amount_paid }} €</td></tr>
+    <tr class="total"><td>Solde dû (échéance {{ due_date }})</td><td>{{ balance }} €</td></tr>
+  </table>
+  <p style="margin-top: 40px; font-size: 0.9em; color: #666;">MedSecretariat — Document généré automatiquement</p>
+</body>
+</html>

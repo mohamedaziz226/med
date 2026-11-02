@@ -1,0 +1,79 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8000"
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      minio:
+        condition: service_started
+    volumes:
+      - .:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: medsecretariat
+      POSTGRES_PASSWORD: medsecretariat
+      POSTGRES_DB: medsecretariat
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U medsecretariat"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
+  n8n:
+    image: n8nio/n8n:latest
+    ports:
+      - "5678:5678"
+    environment:
+      N8N_HOST: localhost
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+      WEBHOOK_URL: http://localhost:5678/
+      GENERIC_TIMEZONE: Africa/Tunis
+      TZ: Africa/Tunis
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      # Clé de chiffrement des credentials - DOIT rester identique,
+      # sinon les credentials existants ne peuvent plus être déchiffrés.
+      N8N_ENCRYPTION_KEY: "2AUOSFZekm/GxgrUrf/834VgY6IujHKt"
+      MED_BACKEND_URL: ${MED_BACKEND_URL:-http://app:8000}
+      MED_N8N_ADMIN_EMAIL: ${MED_N8N_ADMIN_EMAIL:-}
+      MED_N8N_ADMIN_PASSWORD: ${MED_N8N_ADMIN_PASSWORD:-}
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  n8n_data:

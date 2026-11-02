@@ -1,0 +1,13 @@
+{
+  "name": "TEST - Toutes les notifications (J-7/J-1/J-15/J-10)",
+  "nodes": [],
+  "connections": {},
+  "id": "TESTallNotifications001",
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {},
+  "tags": []
+}

@@ -1,0 +1,586 @@
+{
+  "name": "MedSecretariat — Rappels de dettes (J-15/J-10) + notifications patient",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-debt",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -1600,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.MED_BACKEND_URL }}/api/v1/auth/login",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"email\": \"{{ $env.MED_N8N_ADMIN_EMAIL }}\",\n  \"password\": \"{{ $env.MED_N8N_ADMIN_PASSWORD }}\"\n}",
+        "options": {}
+      },
+      "id": "login-debt",
+      "name": "Login Backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1350,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.MED_BACKEND_URL }}/api/v1/appointments/upcoming",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Login Backend').first().json.access_token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-debt",
+      "name": "Get Upcoming Appointments",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1100,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "loop-debt",
+      "name": "Loop Appointments",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -800,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.MED_BACKEND_URL }}/api/v1/patients/{{ $('Loop Appointments').item.json.patient_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Login Backend').first().json.access_token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-pat-debt",
+      "name": "Get Patient",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -500,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// Calcule la dette du patient courant (paiements aggrégés)\nconst apt = $('Loop Appointments').first().json;\nconst patient = $('Get Patient').first().json;\n\nconst st = String(apt.status || '').toLowerCase();\nconst eligible = (st === 'confirmed' || st === 'pending');\n\nlet debt = 0;\nif (eligible) {\n  const arr = Array.isArray($json.payments) ? $json.payments : [];\n  for (const p of arr) {\n    if (p && p.amount != null && p.amount !== undefined) {\n      debt += (Number(p.amount) || 0) - (Number(p.amount_paid) || 0);\n    }\n  }\n}\ndebt = Math.round(debt * 100) / 100;\n\nreturn {\n  json: {\n    patient_id: apt.patient_id,\n    appointment_id: apt.id,\n    appointment_scheduled_at: apt.scheduled_at,\n    patient_name: `${patient.first_name || ''} ${patient.last_name || ''}`.trim() || 'Patient',\n    patient_email: patient.email || '',\n    debt\n  }\n};"
+      },
+      "id": "calc-debt",
+      "name": "Calculate Debt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        60,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "if-debt-1",
+              "leftValue": "={{ Number($json.debt) }}",
+              "rightValue": "0",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "if-debt",
+      "name": "IF Debt > 0",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        360,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calcule le jour du rappel J-15 / J-10 (fuseau metier Africa/Tunis)\n// et genere le message + le HTML pour l'email Gmail.\nconst item = $json;\n\nconst TZ_OPTS = { timeZone: 'Africa/Tunis' };\nconst ymdFmt = new Intl.DateTimeFormat('en-CA', { ...TZ_OPTS, year: 'numeric', month: '2-digit', day: '2-digit' });\nconst tunisDayUtcMidnight = (dateObj) => {\n  const parts = {};\n  for (const part of ymdFmt.formatToParts(dateObj)) parts[part.type] = part.value;\n  return Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day));\n};\n\nconst todayMidnight = tunisDayUtcMidnight(new Date());\nconst rdvDate = new Date(item.appointment_scheduled_at);\nconst rdvMidnight = tunisDayUtcMidnight(rdvDate);\nconst daysUntil = Math.round((rdvMidnight - todayMidnight) / 86400000);\n\nlet reminder_type = null;\nlet notification_type = null;\nif (daysUntil === 15) { reminder_type = 'j15'; notification_type = 'DEBT_REMINDER_15'; }\nelse if (daysUntil === 10) { reminder_type = 'j10'; notification_type = 'DEBT_REMINDER_10'; }\n\nif (!reminder_type) {\n  return [{ json: { ...item, reminder_type: null } }];\n}\n\nconst dateStr = rdvDate.toLocaleDateString('fr-FR', { ...TZ_OPTS, day: '2-digit', month: '2-digit', year: 'numeric' });\nconst timeStr = rdvDate.toLocaleTimeString('fr-FR', { ...TZ_OPTS, hour: '2-digit', minute: '2-digit' });\nconst debtStr = Number(item.debt).toFixed(2);\n\n// Sujets d'email selon la demande\nconst subject = reminder_type === 'j15'\n  ? 'Rappel de paiement - J-15'\n  : 'Rappel de paiement - J-10';\n\nconst typeLabel = reminder_type === 'j15' ? 'Rappel 15 jours avant' : 'Rappel 10 jours avant';\n\nconst message = `Bonjour ${item.patient_name}, nous vous informons qu'un montant de ${debtStr} DT reste à régler sur votre dossier. Votre prochain rendez-vous est prévu le ${dateStr} à ${timeStr}. Type: ${typeLabel}.`;\n\nconst gmail_html = `<html><body>\n<h2>Rappel de paiement</h2>\n<p>Bonjour <strong>${item.patient_name}</strong>,</p>\n<p>Nous vous informons qu'un montant de <strong>${debtStr} DT</strong> reste à régler sur votre dossier.</p>\n<ul>\n<li><strong>Date du rendez-vous:</strong> ${dateStr}</li>\n<li><strong>Heure:</strong> ${timeStr}</li>\n<li><strong>Montant restant:</strong> ${debtStr} DT</li>\n<li><strong>Type de notification:</strong> ${typeLabel}</li>\n</ul>\n<p>Nous vous invitons à régulariser votre situation avant cette date.</p>\n<p>Cordialement,<br/>MedSecretariat</p>\n</body></html>`;\n\n// Destinataire reel: l'email du patient (aucune redirection de test)\nconst toEmail = item.patient_email;\n\nreturn [{\n  json: {\n    ...item,\n    patient_email: toEmail,\n    title: subject,\n    message: message,\n    gmail_html: gmail_html,\n    reminder_type: reminder_type,\n    notification_type: notification_type,\n    dedup_key: `appointment:${item.patient_id}:${item.appointment_id}:${notification_type}`\n  }\n}];"
+      },
+      "id": "prepare-debt",
+      "name": "Generate Debt Reminder Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1.0,
+      "position": [
+        640,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "sendTo": "={{ $('Generate Debt Reminder Message').first().json.patient_email }}",
+        "subject": "={{ $('Generate Debt Reminder Message').first().json.title }}",
+        "emailType": "html",
+        "message": "={{ $('Generate Debt Reminder Message').first().json.gmail_html }}",
+        "options": {}
+      },
+      "id": "gmail-debt",
+      "name": "Send Debt Reminder Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        900,
+        -120
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "zDNxc43cvYUrbJe9",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.MED_BACKEND_URL }}/api/v1/notifications",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({patient_id: $('Generate Debt Reminder Message').first().json.patient_id, title: $('Generate Debt Reminder Message').first().json.title, message: $('Generate Debt Reminder Message').first().json.message, type: 'DEBT_REMINDER', related_entity_id: $('Generate Debt Reminder Message').first().json.appointment_id, related_entity_type: 'appointment', reminder_type: $('Generate Debt Reminder Message').first().json.notification_type, dedup_key: $('Generate Debt Reminder Message').first().json.dedup_key }) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Login Backend').first().json.access_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "create-notif-debt",
+      "name": "Create Patient Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        -120
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "finish-debt",
+      "name": "End",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1.0,
+      "position": [
+        1400,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "cond-reminder-set",
+              "leftValue": "={{ Boolean($json.reminder_type) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "if-eligible",
+      "name": "IF Eligible Reminder",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        870,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "debt-reminders-exec",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-debt-reminders-exec",
+      "name": "Webhook (Test)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1700,
+        200
+      ],
+      "webhookId": "wh-debt-reminders-exec"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.MED_BACKEND_URL }}/api/v1/payments?patient_id={{ $json.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Login Backend').first().json.access_token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-patient-payments-1",
+      "name": "Get Patient Payments",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        200
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "payments",
+        "options": {}
+      },
+      "id": "aggregate-payments-1",
+      "name": "Aggregate Payments",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        460,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.MED_BACKEND_URL }}/api/v1/notifications/dedup-exists?dedup_key={{ $('Generate Debt Reminder Message').item.json.dedup_key }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Login Backend').first().json.access_token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "check-dedup-500",
+      "name": "Check Dedup Key",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "cond-not-sent-500",
+              "leftValue": "={{ $json.exists }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "if-not-sent-500",
+      "name": "IF Not Already Sent",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        720,
+        420
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Login Backend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Login Backend": {
+      "main": [
+        [
+          {
+            "node": "Get Upcoming Appointments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Upcoming Appointments": {
+      "main": [
+        [
+          {
+            "node": "Loop Appointments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Appointments": {
+      "main": [
+        [
+          {
+            "node": "End",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Patient",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Patient": {
+      "main": [
+        [
+          {
+            "node": "Get Patient Payments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Debt": {
+      "main": [
+        [
+          {
+            "node": "IF Debt > 0",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Debt > 0": {
+      "main": [
+        [
+          {
+            "node": "Generate Debt Reminder Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Appointments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Debt Reminder Message": {
+      "main": [
+        [
+          {
+            "node": "IF Eligible Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Debt Reminder Email": {
+      "main": [
+        [
+          {
+            "node": "Create Patient Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Patient Notification": {
+      "main": [
+        [
+          {
+            "node": "Loop Appointments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Eligible Reminder": {
+      "main": [
+        [
+          {
+            "node": "Check Dedup Key",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Appointments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook (Test)": {
+      "main": [
+        [
+          {
+            "node": "Login Backend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Patient Payments": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Payments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Payments": {
+      "main": [
+        [
+          {
+            "node": "Calculate Debt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Dedup Key": {
+      "main": [
+        [
+          {
+            "node": "IF Not Already Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Not Already Sent": {
+      "main": [
+        [
+          {
+            "node": "Send Debt Reminder Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Appointments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "id": "cIIOrjdhNGTPjwfJ",
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {},
+  "tags": []
+}

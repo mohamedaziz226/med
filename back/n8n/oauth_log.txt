@@ -1,0 +1,8 @@
+[1] Loaded decrypted credential from c:\Users\Aziz\Desktop\med\backend\n8n/gmail_cred_decrypted.json
+
+[2] Authorization URL prepared
+
+Opening browser... if it doesn't open, copy & paste the URL below:
+https://accounts.google.com/o/oauth2/v2/auth?client_id=815021730873-g8qfmhdccapeo8gpviumic8c4d9iet4b.apps.googleusercontent.com&redirect_uri=http%3A%2F%2Flocalhost%3A9876&response_type=code&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fgmail.send+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fgmail.readonly+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.email&access_type=offline&prompt=consent
+[3] Local server on http://localhost:9876
+^C

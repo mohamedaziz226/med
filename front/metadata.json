@@ -1,0 +1,6 @@
+{
+  "name": "MedSecretariat",
+  "description": "Application web complète de gestion intelligente d'un secrétariat médical pour administrateurs, médecins, secrétaires et patients.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

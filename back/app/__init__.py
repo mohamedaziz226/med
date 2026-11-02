@@ -1,0 +1,1 @@
+"""MedSecretariat backend application."""

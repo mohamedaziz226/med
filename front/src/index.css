@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    background-color: #F8FAFC;
+    color: #1E293B;
+    font-family: 'Helvetica Neue', Arial, -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+}
+
+/* Custom High Density Theme utility classes */
+.stat-card {
+  background: #FFFFFF;
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid #E2E8F0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.stat-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #64748B;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  margin-top: 4px;
+  color: #0F172A;
+}
+
+.panel {
+  background: #FFFFFF;
+  border-radius: 8px;
+  border: 1px solid #E2E8F0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.panel-header {
+  padding: 14px 18px;
+  border-bottom: 1px solid #E2E8F0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.panel-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0F172A;
+}
+
+.status-tag {
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+}
+
+.tag-green {
+  background: #DCFCE7;
+  color: #166534;
+}
+
+.tag-blue {
+  background: #DBEAFE;
+  color: #1E40AF;
+}
+
+.tag-orange {
+  background: #FFEDD5;
+  color: #9A3412;
+}
+
+.tag-rose {
+  background: #FFE4E6;
+  color: #9F1239;
+}
+

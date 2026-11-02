@@ -1,0 +1,199 @@
+{
+  "name": "MedSecretariat — Événements de rendez-vous (webhook)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "appointment-sync",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-appointment-events",
+      "name": "Webhook RDV",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1000,
+        0
+      ],
+      "webhookId": "appointment-sync"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Centre de répartition des événements de rendez-vous\n// Le backend MedSecretariat reste la source de vérité ; ce workflow\n// prépare la synchronisation emails / notifications / Google Calendar.\n// Les types correspondent à l'enum NotificationType du backend.\nconst src = $json.body || $json;\nconst event = src.event || 'appointment.unknown';\nconst t = {\n  id: src.appointment_id,\n  patientId: src.patient_id,\n  patientName: src.patient_name || 'Patient',\n  doctorId: src.doctor_id,\n  scheduledAt: src.scheduled_at,\n  proposedAt: src.proposed_at || null,\n  duration: src.duration,\n  status: src.status,\n  reason: src.reason || null,\n};\n\nconst messages = {\n  'appointment.requested': {\n    type: 'system',\n    subject: 'Demande de rendez-vous envoyée',\n    body: `Bonjour ${t.patientName}, votre demande de rendez-vous du ${t.scheduledAt} a bien été transmise au secrétariat.`,\n  },\n  'appointment.confirmed': {\n    type: 'appointment_confirmed',\n    subject: 'Rendez-vous confirmé',\n    body: `Bonjour ${t.patientName}, votre rendez-vous du ${t.scheduledAt} est confirmé.`,\n  },\n  'appointment.rejected': {\n    type: 'appointment_rejected',\n    subject: 'Rendez-vous refusé',\n    body: `Bonjour ${t.patientName}, votre demande de rendez-vous a été refusée.${t.reason ? ' Motif : ' + t.reason : ''}`,\n  },\n  'appointment.rescheduled': {\n    type: 'appointment_rescheduled',\n    subject: \"Proposition d'un autre créneau\",\n    body: `Bonjour ${t.patientName}, le secrétariat vous propose le créneau ${t.proposedAt || ''}.`,\n  },\n  'appointment.cancelled': {\n    type: 'system',\n    subject: 'Rendez-vous annulé',\n    body: `Bonjour ${t.patientName}, votre rendez-vous du ${t.scheduledAt} a été annulé.`,\n  },\n};\n\nconst msg = messages[event] || {\n  type: 'system',\n  subject: 'Événement de rendez-vous',\n  body: JSON.stringify(src),\n};\nreturn [{ ...t, event, ...msg }];"
+      },
+      "id": "dispatch-events",
+      "name": "Préparer les notifications",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -700,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prépare l'appel au backend pour créer la notification patient (in-app)\nconst item = $('Préparer les notifications').first().json;\nconst dateStr = item.scheduledAt ? String(item.scheduledAt).slice(0, 10) : '';\nreturn [{\n  patient_id: item.patientId,\n  title: item.subject,\n  message: item.body || item.message,\n  type: item.type,\n  related_entity_id: item.id,\n  related_entity_type: 'appointment',\n}];"
+      },
+      "id": "prepare-notif-payload",
+      "name": "Payload notification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -450,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.MED_BACKEND_URL }}/api/v1/auth/login",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"email\": \"{{ $env.MED_N8N_ADMIN_EMAIL }}\",\n  \"password\": \"{{ $env.MED_N8N_ADMIN_PASSWORD }}\"\n}",
+        "options": {}
+      },
+      "id": "login-rdv-events",
+      "name": "Login Backend (RDV)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -800,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.MED_BACKEND_URL }}/api/v1/notifications",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Login Backend (RDV)').first().json.access_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ patient_id: $('Payload notification').item.json.patient_id, title: $('Payload notification').item.json.title, message: $('Payload notification').item.json.message, type: $('Payload notification').item.json.type, related_entity_id: $('Payload notification').item.json.related_entity_id, related_entity_type: 'appointment' }) }}",
+        "options": {}
+      },
+      "id": "create-notif-event",
+      "name": "Créer la notification patient",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -100,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: \"ok\", event: $('Préparer les notifications').first().json.event }) }}",
+        "options": {}
+      },
+      "id": "respond-events",
+      "name": "Répondre au webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        100,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "end-events",
+      "name": "Fin",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        300,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook RDV": {
+      "main": [
+        [
+          {
+            "node": "Préparer les notifications",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Préparer les notifications": {
+      "main": [
+        [
+          {
+            "node": "Payload notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Payload notification": {
+      "main": [
+        [
+          {
+            "node": "Login Backend (RDV)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Login Backend (RDV)": {
+      "main": [
+        [
+          {
+            "node": "Créer la notification patient",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Créer la notification patient": {
+      "main": [
+        [
+          {
+            "node": "Répondre au webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Répondre au webhook": {
+      "main": [
+        [
+          {
+            "node": "Fin",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "id": "XEWOdpaklAxSNPts",
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {},
+  "tags": []
+}
